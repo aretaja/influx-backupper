@@ -37,5 +37,5 @@ Usage:
 * Setup cron job for backup (Append to */etc/crontab*)
 ```
 # InfluxDB backup
-55 1    * * *   root    /usr/local/bin/influx-backupper.sh >>/var/log/ibackupper.log 2>&1
+55 1    * * *   root    /usr/local/bin/influx-backupper.sh >>/var/log/influx-backupper.log 2>&1
 ```
