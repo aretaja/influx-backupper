@@ -3,9 +3,10 @@ Script to make InfluxDB backups of your data to remote target. Requires bash, rs
 
 ## Setup
 * Prerequisites
+
 Make sure you have **bash**, **rsync** installed on source and destination servers.
 
-* Install ibackupper
+* Install
 ```
 git clone https://github.com/aretaja/influx-backupper
 cd influx-backupper
@@ -13,7 +14,8 @@ sudo ./install.sh
 ```
 
 * Config
-Config file must be located in `/usr/local/bin`. Look at provided example config file.
+
+Config file location defaults to `/usr/local/etc/influx-backupper.conf`. Look at provided example config file.
 
 ## Usage
 * Help
@@ -25,7 +27,7 @@ Creates monthly backup on every 1 day of month in remeote
 'influxdb_monthly' directory, weekly on every 1 day of week in
 'influxdb_weekly' directory and every other day in 'influxdb_daily'
 directory. Only latest backup will preserved in every directory.
-Requires config file: /usr/local/etc/<configfile>
+Requires config file. Default: /usr/local/etc/influx-backupper.conf
 Script must be executed by root.
 
 Usage:
