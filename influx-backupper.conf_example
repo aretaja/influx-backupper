@@ -1,0 +1,18 @@
+# InfluxDB database (backup source)
+db[0]="icinga2"
+
+# Local temp dir for backup (influxd backup destination)
+local_dest="/var/tmp/influx_bak"
+
+# Backup destination host
+dhost="mybackuphost.com"
+
+# Backup destination ssh port
+dport="2222"
+
+# Backup destination ssh user
+duser="backupuser"
+
+# Backup destination basedir where influxdb_(daily|weekly|monthly)
+# will be created
+dbdir="archives"
