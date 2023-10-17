@@ -19,13 +19,10 @@ then
     exit 1
 fi
 
-files=`find . ! -path "*/\.*" ! -name "install.sh" -type f -exec echo '{}' \; |sed 's%./%%'`
-for f in $files
-do
-    cp --parents "$f" $destination
-    chown root:root "${destination}/${f}"
-    chmod 0755 "${destination}/${f}"
-done
+f="influx-backupper.sh"
+cp --parents "$f" $destination
+chown root:root "${destination}/${f}"
+chmod 0755 "${destination}/${f}"
 
 echo 'Done'
 exit

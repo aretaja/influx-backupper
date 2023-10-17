@@ -1,5 +1,5 @@
 # influx-backupper
-Script to make InfluxDB backups of your data to remote target. Requires bash, rsync on both ends and ssh key login without password to remote end. Must be executed as root.
+Script to make InfluxDB v2 backups of your data to remote target. Requires bash, rsync on both ends and ssh key login without password to remote end. Must be executed as root.
 
 ## Setup
 * Prerequisites

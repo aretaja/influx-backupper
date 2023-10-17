@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # influx-backupper.sh
-# Copyright 2019-2022 by Marko Punnar <marko[AT]aretaja.org>
-# Version: 2.0.0
+# Copyright 2019-2023 by Marko Punnar <marko[AT]aretaja.org>
+# Version: 3.0.0
 #
-# Script to make InfluxDB backups of your data to remote
+# Script to make InfluxDB v2 backups of your data to remote
 # target. Requires bash, rsync on both ends and ssh key login without
 # password to remote end. Must be executed as root.
 #
@@ -25,6 +25,7 @@
 # 1.0 Initial release
 # 1.1 Use hardcoded config file
 # 2.0.0 Change versioning. Minor non code changes
+# 3.0.0 Make it work on InfluxDB v2. v1 is not supported anymore
 
 # show help if requested
 if [[ "$1" = '-h' ]] || [[ "$1" = '--help' ]]
@@ -87,22 +88,6 @@ fi
 
 
 # Check config
-# shellcheck disable=SC2128
-if [[ ! -z "$db" ]]
-then
-    for i in "${db[@]}"
-    do
-        if [[ -z "$i" ]] || [[ ! "$i" =~ ^[[:alnum:]_-]+$ ]]
-        then
-            write_log ERROR "Config - InfluxDB database missing or incorrect"
-            exit 1
-        fi
-    done
-else
-    write_log ERROR "Config - InfluxDB database(s) not defined"
-    exit 1
-fi
-
 # shellcheck disable=SC1001
 if [[ -z "$local_dest" ]] || [[ ! "$local_dest" =~ ^[[:alnum:]_\.\/-]+$ ]] || [[ ! -w "$local_dest" ]]
 then
@@ -187,20 +172,16 @@ then
     eval "$cmd"
 fi
 
-for d in "${db[@]}"
-do
-    cmd="influxd backup -portable -database \"${d}\" \"${local_dest}\""
-    eval "$cmd" 2>&1
-    ret=$?
-    if [[ "$ret" -eq 0 ]]
-    then
-        write_log INFO "InfluxDB - $d local backup success"
-        break
-    else
-        write_log ERROR "InfluxDB - $d local backup failed"
-        error=1
-    fi
-done
+cmd="influx backup \"${local_dest}\""
+eval "$cmd" 2>&1
+ret=$?
+if [[ "$ret" -eq 0 ]]
+then
+    write_log INFO "InfluxDB - $d local backup success"
+else
+    write_log ERROR "InfluxDB - $d local backup failed"
+    error=1
+fi
 
 if [[ ! -z $error ]]
 then
