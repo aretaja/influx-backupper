@@ -3,7 +3,7 @@ set -euo pipefail
 #
 # influx-backupper.sh
 # Copyright 2019-2025 by Marko Punnar <marko[AT]aretaja.org>
-# Version: 4.0.0
+# Version: 4.0.1
 #
 # Script to make InfluxDB v2 backups of your data to remote
 # target. Requires bash, rsync on both ends and ssh key login without
@@ -28,6 +28,7 @@ set -euo pipefail
 # 2.0.0 Change versioning. Minor non code changes
 # 3.0.0 Make it work on InfluxDB v2. v1 is not supported anymore
 # 4.0.0 Able to keep archives locally
+# 4.0.1 Reimplement locking. Create the lock atomically to avoid races
 
 # show help if requested
 if [[ "$1" = '-h' ]] || [[ "$1" = '--help' ]]
@@ -47,6 +48,13 @@ then
 fi
 
 ### Functions ###############################################################
+# Cleanup lockfile
+cleanup()
+{
+    # shellcheck disable=SC2317
+    rm -f "$lock_f"
+}
+
 # Output formater. Takes severity (ERROR, WARNING, INEO) as first
 # and output message as second arg.
 write_log()
@@ -73,11 +81,16 @@ lock_f="/var/run/influx-backupper.lock"
 dest_local=1
 
 # Check for running backup (lockfile)
-if [[ -e "$lock_f" ]] && (( $(date +%s) - $(stat -c %Y $lock_f) < 86400 ))
+# Open a file descriptor and try to lock it
+exec 9>"$lock_f"
+if ! flock -n 9
 then
-    write_log ERROR "Previous backup is running (lockfile set in the last 24h). Interrupting.."
+    write_log ERROR "Previous backup is running (lockfile set). Interrupting.."
     exit 1
 fi
+
+# Ensure lockfile is removed at exit (unlocking happens automatically when FD 9 closes)
+trap cleanup EXIT INT TERM HUP
 
 # Load config
 if [[ -r "$cfile" ]]
@@ -147,9 +160,6 @@ then
 fi
 ddir="influxdb_${target}"
 
-# Set lockfile
-touch "$lock_f";
-
 if [[ "$dest_local" -eq 0 ]]
 then
     # Connection check
@@ -162,7 +172,6 @@ then
         else
             write_log ERROR "$dhost returned \"${result}\"! Interrupting.."
         fi
-        rm "$lock_f"
         exit 1
     else
         write_log INFO "$dhost connection test OK"
@@ -188,7 +197,6 @@ then
     write_log INFO "InfluxDB - local backup success"
 else
     write_log ERROR "InfluxDB - local backup failed. Interrupting!"
-    rm "$lock_f"
     exit 1
 fi
 
@@ -213,10 +221,8 @@ done
 if [[ "$ret" -ne 0 ]]
 then
     write_log ERROR "rsync - got non zero exit code - $ret. Giving up"
-    rm "$lock_f"
     exit 1
 fi
 
 write_log INFO "InfluxDB - all backup done"
-rm "$lock_f"
 exit 0
