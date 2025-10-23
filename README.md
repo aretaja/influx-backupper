@@ -1,5 +1,7 @@
 # influx-backupper
-Script to make InfluxDB v2 backups of your data to remote target. Requires bash, rsync on both ends and ssh key login without password to remote end. Must be executed as root.
+Script to make InfluxDB v2 backups of your data to local or remote target.
+Requires bash, rsync on both ends and ssh key login without password to remote end.
+Must be executed as root.
 
 ## Setup
 * Prerequisites
@@ -23,15 +25,16 @@ Config file location defaults to `/usr/local/etc/influx-backupper.conf`. Look at
 sudo influx-backupper.sh -h
 
 Make daily, weekly, monthly InfluxDB backups.
-Creates monthly backup on every 1 day of month in remeote
-'influxdb_monthly' directory, weekly on every 1 day of week in
-'influxdb_weekly' directory and every other day in 'influxdb_daily'
-directory. Only latest backup will preserved in every directory.
+Creates local or remeote backup:
+  monthly on every 1 day of month in'influxdb_monthly' directory,
+  weekly on every 1 day of week in 'influxdb_weekly' directory,
+  every other day in 'influxdb_daily' directory.
+Only latest backup will preserved in every directory.
 Requires config file. Default: /usr/local/etc/influx-backupper.conf
 Script must be executed by root.
 
 Usage:
-       influx-backupper.sh influx-backupper.conf
+  influx-backupper.sh influx-backupper.conf
 ```
 
 * Setup cron job for backup (Append to */etc/crontab*)

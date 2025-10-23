@@ -1,8 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 #
 # influx-backupper.sh
-# Copyright 2019-2023 by Marko Punnar <marko[AT]aretaja.org>
-# Version: 3.0.0
+# Copyright 2019-2025 by Marko Punnar <marko[AT]aretaja.org>
+# Version: 4.0.0
 #
 # Script to make InfluxDB v2 backups of your data to remote
 # target. Requires bash, rsync on both ends and ssh key login without
@@ -26,15 +27,17 @@
 # 1.1 Use hardcoded config file
 # 2.0.0 Change versioning. Minor non code changes
 # 3.0.0 Make it work on InfluxDB v2. v1 is not supported anymore
+# 4.0.0 Able to keep archives locally
 
 # show help if requested
 if [[ "$1" = '-h' ]] || [[ "$1" = '--help' ]]
 then
     echo "Make daily, weekly, monthly InfluxDB backups."
-    echo "Creates monthly backup on every 1 day of month in remeote"
-    echo "'influxdb_monthly' directory, weekly on every 1 day of week in"
-    echo "'influxdb_weekly' directory and every other day in 'influxdb_daily'"
-    echo "directory. Only latest backup will preserved in every directory."
+    echo "Creates local or remeote backup:"
+    echo "  monthly on every 1 day of month in'influxdb_monthly' directory,"
+    echo "  weekly on every 1 day of week in 'influxdb_weekly' directory,"
+    echo "  every other day in 'influxdb_daily' directory."
+    echo "Only latest backup will preserved in every directory."
     echo "Requires config file. Default: /usr/local/etc/influx-backupper.conf"
     echo "Script must be executed by root."
     echo ""
@@ -65,14 +68,14 @@ then
 fi
 
 # Define default values
-cfile="/usr/local/etc/influx-backupper.conf"
+cfile="$1" || "/usr/local/etc/influx-backupper.conf"
 lock_f="/var/run/influx-backupper.lock"
-dport="22"
+dest_local=1
 
 # Check for running backup (lockfile)
-if [[ -e "$lock_f" ]]
+if [[ -e "$lock_f" ]] && (( $(date +%s) - $(stat -c %Y $lock_f) < 86400 ))
 then
-    write_log ERROR "Previous backup is running (lockfile set). Interrupting.."
+    write_log ERROR "Previous backup is running (lockfile set in the last 24h). Interrupting.."
     exit 1
 fi
 
@@ -85,7 +88,6 @@ else
      write_log ERROR "Config file missing! Interrupting.."
      exit 1
 fi
-
 
 # Check config
 # shellcheck disable=SC1001
@@ -103,28 +105,32 @@ else
     fi
 fi
 
-if [[ -z "$dhost" ]] || [[ ! "$dhost" =~ ^[[:alnum:]\.-]+$ ]]
-then
-    write_log ERROR "Config - Backup destination host missing or incorrect"
-    exit 1
-fi
-
-if [[ -z "$dport" ]] || [[ ! "$dport" =~ ^[[:digit:]]+$ ]]
-then
-    write_log ERROR "Config - Backup destination ssh port missing or incorrect"
-    exit 1
-fi
-
-if [[ -z "$duser" ]] || [[ ! "$duser" =~ ^[[:alnum:]_\.-]+$ ]]
-then
-    write_log ERROR "Config - Backup destination ssh user missing or incorrect"
-    exit 1
-fi
-
-if [[ -z "$dbdir" ]] || [[ ! "$dbdir" =~ ^[[:alnum:]_\ \.-]+$ ]]
+if [[ -z "${dbdir-}" ]] || [[ ! "$dbdir" =~ ^[[:alnum:]_\ \.\/-]+$ ]]
 then
     write_log ERROR "Config - Backup destination basedir missing or incorrect"
     exit 1
+fi
+
+if [[ -n "${dhost-}" ]] && [[ -n "${dport-}" ]] && [[ -n "${duser-}" ]]
+then
+    dest_local=0
+    if [[ ! "$dhost" =~ ^[[:alnum:]\.-]+$ ]]
+    then
+        write_log ERROR "Config - Backup destination host missing or incorrect"
+        exit 1
+    fi
+
+    if [[ ! "$dport" =~ ^[[:digit:]]+$ ]]
+    then
+        write_log ERROR "Config - Backup destination ssh port missing or incorrect"
+        exit 1
+    fi
+
+    if [[ ! "$duser" =~ ^[[:alnum:]_\.-]+$ ]]
+    then
+        write_log ERROR "Config - Backup destination ssh user missing or incorrect"
+        exit 1
+    fi
 fi
 
 # Set remote directory name
@@ -144,21 +150,23 @@ ddir="influxdb_${target}"
 # Set lockfile
 touch "$lock_f";
 
-# Connection check
-# shellcheck disable=SC2029
-result=$(ssh -q -o BatchMode=yes -o ConnectTimeout=10 -l"$duser" -p"$dport" "$dhost" "cd \"$dbdir\"" 2>&1)
-if [[ "$?" -ne 0 ]]
+if [[ "$dest_local" -eq 0 ]]
 then
-    if [[ -z "$result" ]]
+    # Connection check
+    # shellcheck disable=SC2029
+    if ! result=$(ssh -q -o BatchMode=yes -o ConnectTimeout=10 -l"$duser" -p"$dport" "$dhost" "cd \"$dbdir\"" 2>&1)
     then
-        write_log ERROR "$dhost is not reachable! Interrupting.."
+        if [[ -z "$result" ]]
+        then
+            write_log ERROR "$dhost is not reachable! Interrupting.."
+        else
+            write_log ERROR "$dhost returned \"${result}\"! Interrupting.."
+        fi
+        rm "$lock_f"
+        exit 1
     else
-        write_log ERROR "$dhost returned \"${result}\"! Interrupting.."
+        write_log INFO "$dhost connection test OK"
     fi
-    rm "$lock_f"
-    exit 1
-else
-    write_log INFO "$dhost connection test OK"
 fi
 
 # Make InfluxDB backup to local temp directory
@@ -177,30 +185,29 @@ eval "$cmd" 2>&1
 ret=$?
 if [[ "$ret" -eq 0 ]]
 then
-    write_log INFO "InfluxDB - $d local backup success"
+    write_log INFO "InfluxDB - local backup success"
 else
-    write_log ERROR "InfluxDB - $d local backup failed"
-    error=1
-fi
-
-if [[ ! -z $error ]]
-then
-    write_log ERROR "InfluxDB - local backup procces had errors. Interrupting!"
+    write_log ERROR "InfluxDB - local backup failed. Interrupting!"
     rm "$lock_f"
     exit 1
 fi
 
-# Do backup to remote server
-write_log INFO "rsync - start backup to remote server: \"${duser}\"@${dhost}:\"${dbdir}/${ddir}\". Rsync log follows:"
-
-cmd="rsync -aHAXh --remove-source-files --delete --timeout=300 --stats --numeric-ids -M--fake-super -e 'ssh -o BatchMode=yes -p${dport}' \"${local_dest}/\" \"${duser}\"@${dhost}:\"${dbdir}/${ddir}\""
+# Move backup files to the target
+if [[ "$dest_local" -eq 0 ]]
+then
+    write_log INFO "rsync - move files to \"${duser}\"@${dhost}:\"${dbdir}/${ddir}\". Rsync log follows:"
+    cmd="rsync -aHAXh --remove-source-files --delete --timeout=300 --stats --numeric-ids -M--fake-super -e 'ssh -o BatchMode=yes -p${dport}' \"${local_dest}/\" \"${duser}\"@${dhost}:\"${dbdir}/${ddir}\""
+else
+    write_log INFO "rsync - move files to \"${dbdir}/${ddir}\". Rsync log follows:"
+    cmd="rsync -aHAXh --remove-source-files --delete --stats \"${local_dest}/\" \"${dbdir}/${ddir}\""
+fi
 
 for i in $(seq 1 10)
 do
     eval "$cmd" 2>&1
     ret=$?
     if [[ "$ret" -eq 0 ]]; then break; fi
-    write_log WARNING "rsync - got non zero exit code - $ret.! Retrying.."
+    write_log WARNING "rsync - got non zero exit code - $ret.! Retry $i from 10"
     sleep 60
 done
 if [[ "$ret" -ne 0 ]]
